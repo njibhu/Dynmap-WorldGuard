@@ -4,14 +4,15 @@ update:
   # Seconds between checks for Residence updates
   period: 300
 
-layer:
-  name: "WorldGuard"
-  # Make mobs layer hidden by default
-  hidebydefault: false
-  # ordering priority in layer menu (low goes before high - default is 0)
-  layerprio: 0
-  # (optional) set minimum zoom level before layer is visible (0 = defalt, always visible)
-  minzoom: 0
+layers:
+  default:
+    name: "WorldGuard"
+    # Make mobs layer hidden by default
+    hidebydefault: false
+    # ordering priority in layer menu (low goes before high - default is 0)
+    layerprio: 0
+    # (optional) set minimum zoom level before layer is visible (0 = defalt, always visible)
+    minzoom: 0
   
 # Set true to show 3D volumes for zones  
 use3dregions: false

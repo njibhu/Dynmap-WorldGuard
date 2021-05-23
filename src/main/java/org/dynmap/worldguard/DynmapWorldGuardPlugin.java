@@ -52,7 +52,7 @@ public class DynmapWorldGuardPlugin extends JavaPlugin {
     BooleanFlag boost_flag;
     int updatesPerTick = 20;
 
-    MarkerSet set;
+    HashMap<String, MarkerSet> markersets;
     long updperiod;
     boolean use3d;
     String infowindow;
@@ -79,6 +79,7 @@ public class DynmapWorldGuardPlugin extends JavaPlugin {
         String fillcolor;
         double fillopacity;
         String label;
+        String customlayer;
 
         AreaStyle(FileConfiguration cfg, String path, AreaStyle def) {
             strokecolor = cfg.getString(path+".strokeColor", def.strokecolor);
@@ -88,6 +89,7 @@ public class DynmapWorldGuardPlugin extends JavaPlugin {
             fillcolor = cfg.getString(path+".fillColor", def.fillcolor);
             fillopacity = cfg.getDouble(path+".fillOpacity", def.fillopacity);
             label = cfg.getString(path+".label", null);
+            customlayer = cfg.getString(path+".customLayer", def.customlayer);
         }
 
         AreaStyle(FileConfiguration cfg, String path) {
@@ -97,6 +99,7 @@ public class DynmapWorldGuardPlugin extends JavaPlugin {
             strokeweight = cfg.getInt(path+".strokeWeight", 3);
             fillcolor = cfg.getString(path+".fillColor", "#FF0000");
             fillopacity = cfg.getDouble(path+".fillOpacity", 0.35);
+            customlayer = cfg.getString(path+".customLayer", "default");
         }
     }
     
@@ -143,8 +146,9 @@ public class DynmapWorldGuardPlugin extends JavaPlugin {
         }
         return true;
     }
-    
-    private void addStyle(String resid, String worldid, AreaMarker m, ProtectedRegion region) {
+
+
+    private AreaStyle getRegionStyle(String resid, String worldid, ProtectedRegion region){
         AreaStyle as = cusstyle.get(worldid + "/" + resid);
         if(as == null) {
             as = cusstyle.get(resid);
@@ -174,7 +178,7 @@ public class DynmapWorldGuardPlugin extends JavaPlugin {
                         }
                     }
                     if (as == null) {
-                    	for(String p : pd.getPlayers()) {
+                        for(String p : pd.getPlayers()) {
                             if (p != null) {
                                 as = ownerstyle.get(p.toLowerCase());
                                 if (as != null) break;
@@ -195,6 +199,13 @@ public class DynmapWorldGuardPlugin extends JavaPlugin {
         }
         if(as == null)
             as = defstyle;
+
+        return as;
+    }
+
+    
+    private void addStyle(String resid, String worldid, AreaMarker m, ProtectedRegion region) {
+        AreaStyle as = getRegionStyle(resid, worldid, region);
 
         boolean unowned = (region.getOwners().getPlayers().size() == 0) &&
                 (region.getOwners().getUniqueIds().size() == 0) &&
@@ -260,6 +271,8 @@ public class DynmapWorldGuardPlugin extends JavaPlugin {
             String markerid = world.getName() + "_" + id;
             AreaMarker m = resareas.remove(markerid); /* Existing area? */
             if(m == null) {
+                String layerId = getRegionStyle(id, world.getName(), region).customlayer;
+                MarkerSet set = markersets.get(layerId);
                 m = set.createAreaMarker(markerid, name, false, world.getName(), x, z, false);
                 if(m == null)
                     return;
@@ -409,6 +422,25 @@ public class DynmapWorldGuardPlugin extends JavaPlugin {
     }
     
     private boolean reload = false;
+
+    private void parseMarkerSet(String id, FileConfiguration cfg){
+        MarkerSet markerset = markerapi.getMarkerSet("worldguard." + id + ".markerset");
+        if(markerset == null)
+            markerset = markerapi.createMarkerSet("worldguard." + id + ".markerset",
+                    cfg.getString("layers." + id + ".name", "WorldGuard-" + id), null, false);
+        else
+            markerset.setMarkerSetLabel(cfg.getString("layers." + id + ".name", "WorldGuard-" + id));
+        if(markerset == null) {
+            severe("Error creating marker set");
+            return;
+        }
+        int minzoom = cfg.getInt("layers." + id + ".minzoom", 0);
+        if(minzoom > 0)
+            markerset.setMinZoom(minzoom);
+        markerset.setLayerPriority(cfg.getInt("layers." + id + ".layerprio", 10));
+        markerset.setHideByDefault(cfg.getBoolean("layers." + id + ".hidebydefault", false));
+        markersets.put(id, markerset);
+    }
     
     private void activate() {        
         /* Now, get markers API */
@@ -429,20 +461,20 @@ public class DynmapWorldGuardPlugin extends JavaPlugin {
         this.saveConfig();  /* Save updates, if needed */
         
         /* Now, add marker set for mobs (make it transient) */
-        set = markerapi.getMarkerSet("worldguard.markerset");
-        if(set == null)
-            set = markerapi.createMarkerSet("worldguard.markerset", cfg.getString("layer.name", "WorldGuard"), null, false);
-        else
-            set.setMarkerSetLabel(cfg.getString("layer.name", "WorldGuard"));
-        if(set == null) {
-            severe("Error creating marker set");
-            return;
+        markersets = new HashMap<>();
+        /* Get a default layer even if the layers config is empty */
+        parseMarkerSet("default", cfg);
+        ConfigurationSection layerssection = cfg.getConfigurationSection("layers");
+        if(layerssection != null) {
+            Set<String> ids = layerssection.getKeys(false);
+            for(String id : ids) {
+                if(id.equals("default"))
+                    continue;
+
+                parseMarkerSet(id, cfg);
+            }
         }
-        int minzoom = cfg.getInt("layer.minzoom", 0);
-        if(minzoom > 0)
-            set.setMinZoom(minzoom);
-        set.setLayerPriority(cfg.getInt("layer.layerprio", 10));
-        set.setHideByDefault(cfg.getBoolean("layer.hidebydefault", false));
+
         use3d = cfg.getBoolean("use3dregions", false);
         infowindow = cfg.getString("infowindow", DEF_INFOWINDOW);
         maxdepth = cfg.getInt("maxdepth", 16);
@@ -489,10 +521,10 @@ public class DynmapWorldGuardPlugin extends JavaPlugin {
     }
 
     public void onDisable() {
-        if(set != null) {
-            set.deleteMarkerSet();
-            set = null;
-        }
+        markersets.forEach((id, markerset) -> {
+            markerset.deleteMarkerSet();
+            markersets.remove(id);
+        });
         resareas.clear();
         stop = true;
     }
