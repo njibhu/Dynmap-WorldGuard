@@ -523,8 +523,8 @@ public class DynmapWorldGuardPlugin extends JavaPlugin {
     public void onDisable() {
         markersets.forEach((id, markerset) -> {
             markerset.deleteMarkerSet();
-            markersets.remove(id);
         });
+        markersets.clear();
         resareas.clear();
         stop = true;
     }
